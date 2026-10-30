@@ -48,6 +48,54 @@ public final class MasterDataDao {
     public Optional<Warehouse> updateWarehouse(int id,Warehouse x)throws SQLException{try(var c=database.getConnection();var s=c.prepareStatement("UPDATE warehouses SET street=?,city=?,state=?,pincode=?,capacity=?,manager_id=? WHERE warehouse_id=?")){bind(s,x.street(),x.city(),x.state(),x.pincode());s.setInt(5,x.capacity());if(x.managerId()==null)s.setNull(6,java.sql.Types.INTEGER);else s.setInt(6,x.managerId());s.setInt(7,id);if(s.executeUpdate()==0)return Optional.empty();return Optional.of(new Warehouse(id,x.street(),x.city(),x.state(),x.pincode(),x.capacity(),x.managerId()));}}
     public boolean deleteWarehouse(int id)throws SQLException{return delete("warehouses","warehouse_id",id);}
 
+    // ---------- contacts (multivalued attribute) ----------
+    // Table/column names come from this fixed list only, never from user input.
+    private static String[] contactMeta(String kind) {
+        return switch (kind) {
+            case "supplier" -> new String[]{"supplier_contacts", "supplier_id", "supplier_contact_id"};
+            case "customer" -> new String[]{"customer_contacts", "customer_id", "customer_contact_id"};
+            case "employee" -> new String[]{"employee_contacts", "employee_id", "employee_contact_id"};
+            default -> throw new IllegalArgumentException("Contacts are not supported for " + kind);
+        };
+    }
+
+    public List<Contact> contacts(String kind, int ownerId) throws SQLException {
+        String[] m = contactMeta(kind);
+        String sql = "SELECT " + m[2] + ", contact_value FROM " + m[0] + " WHERE " + m[1] + " = ? ORDER BY " + m[2];
+        List<Contact> out = new ArrayList<>();
+        try (var c = database.getConnection(); var s = c.prepareStatement(sql)) {
+            s.setInt(1, ownerId);
+            try (var r = s.executeQuery()) {
+                while (r.next()) out.add(new Contact(r.getInt(1), r.getString(2)));
+            }
+        }
+        return out;
+    }
+
+    public Contact addContact(String kind, int ownerId, String value) throws SQLException {
+        String[] m = contactMeta(kind);
+        String sql = "INSERT INTO " + m[0] + " (" + m[1] + ", contact_value) VALUES (?, ?)";
+        try (var c = database.getConnection(); var s = c.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
+            s.setInt(1, ownerId);
+            s.setString(2, value);
+            s.executeUpdate();
+            try (var k = s.getGeneratedKeys()) {
+                if (!k.next()) throw new SQLException("Contact ID was not generated");
+                return new Contact(k.getInt(1), value);
+            }
+        }
+    }
+
+    public boolean deleteContact(String kind, int ownerId, int contactId) throws SQLException {
+        String[] m = contactMeta(kind);
+        String sql = "DELETE FROM " + m[0] + " WHERE " + m[2] + " = ? AND " + m[1] + " = ?";
+        try (var c = database.getConnection(); var s = c.prepareStatement(sql)) {
+            s.setInt(1, contactId);
+            s.setInt(2, ownerId);
+            return s.executeUpdate() > 0;
+        }
+    }
+
     private static void bind(java.sql.PreparedStatement s,String...v)throws SQLException{for(int i=0;i<v.length;i++)if(v[i]==null)s.setNull(i+1,java.sql.Types.VARCHAR);else s.setString(i+1,v[i]);}
     private boolean delete(String table,String key,int id)throws SQLException{try(var c=database.getConnection();var s=c.prepareStatement("DELETE FROM "+table+" WHERE "+key+"=?")){s.setInt(1,id);return s.executeUpdate()>0;}}
 }

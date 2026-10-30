@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState, type ReactNode } from "react";
+import { Contact, customerContactApi, employeeContactApi, supplierContactApi } from "./api";
 import {
   categoryApi, Category, customerApi, Customer, employeeApi, Employee, productApi, Product,
   purchaseOrderApi, PurchaseOrder, salesOrderApi, SalesOrder, stockTransactionApi, StockTransaction,
@@ -80,12 +81,14 @@ const masterConfigs: Record<MasterKind, { title: string; fields: { key: string; 
 };
 function addressFields() { return [{ key: "street", label: "Street" }, { key: "city", label: "City" }, { key: "state", label: "State" }, { key: "pincode", label: "Pincode" }]; }
 function MasterPage({ kind }: { kind: MasterKind }) {
+  const [contactsFor, setContactsFor] = useState<MasterItem | null>(null);
+  useEffect(() => { setContactsFor(null); }, [kind]);
   const config = masterConfigs[kind]; const [items, setItems] = useState<MasterItem[]>([]); const [form, setForm] = useState<Record<string, string | number>>({}); const [editingId, setEditingId] = useState<number | null>(null); const [loading, setLoading] = useState(true); const msg = useMessages();
   const load = async () => { setLoading(true); try { setItems(await config.api.list()); } catch (e) { msg.setError(errorText(e)); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, [kind]);
   async function submit(e: FormEvent) { e.preventDefault(); msg.clear(); try { const payload = Object.fromEntries(config.fields.map(f => [f.key, form[f.key] === "" ? null : form[f.key]])); if (editingId === null) await config.api.create(payload); else await config.api.update(editingId, payload); setForm({}); setEditingId(null); msg.setMessage(`${config.title} ${editingId === null ? "created" : "updated"}.`); await load(); } catch (x) { msg.setError(errorText(x)); } }
   async function remove(item: MasterItem) { if (!window.confirm(`Delete this ${config.title.toLowerCase()}?`)) return; try { await config.api.remove(item.id); msg.setMessage(`${config.title} deleted.`); await load(); } catch (x) { msg.setError(errorText(x)); } }
-  return <><section className="card"><h2>{editingId === null ? "Add" : "Edit"} {config.title.toLowerCase()}</h2><form onSubmit={submit}>{config.fields.map(f => <label key={f.key}>{f.label}<input type={f.type || "text"} required={f.required} value={form[f.key] ?? ""} onChange={e => setForm({ ...form, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })} /></label>)}<div className="actions"><button>{editingId === null ? "Add" : "Save"} {config.title.toLowerCase()}</button>{editingId !== null && <button type="button" className="secondary" onClick={() => { setEditingId(null); setForm({}); }}>Cancel</button>}</div></form></section><Feedback {...msg} /><ListTable title={`${config.title} list`} loading={loading} empty={!items.length} headers={[...masterHeaders(kind), "Actions"]}>{items.map(item => <tr key={item.id}>{masterCells(kind, item)}<td className="actions"><button className="secondary" onClick={() => { setEditingId(item.id); setForm(Object.fromEntries(config.fields.map(f => [f.key, (item as unknown as Record<string, string | number | null>)[f.key] ?? ""]))); }}>Edit</button><button className="danger" onClick={() => void remove(item)}>Delete</button></td></tr>)}</ListTable></>;
+  return <><section className="card"><h2>{editingId === null ? "Add" : "Edit"} {config.title.toLowerCase()}</h2><form onSubmit={submit}>{config.fields.map(f => <label key={f.key}>{f.label}<input type={f.type || "text"} required={f.required} value={form[f.key] ?? ""} onChange={e => setForm({ ...form, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })} /></label>)}<div className="actions"><button>{editingId === null ? "Add" : "Save"} {config.title.toLowerCase()}</button>{editingId !== null && <button type="button" className="secondary" onClick={() => { setEditingId(null); setForm({}); }}>Cancel</button>}</div></form></section><Feedback {...msg} />{contactsFor && kind !== "warehouses" && <ContactsPanel key={`${kind}-${contactsFor.id}`} kind={kind} owner={contactsFor} onClose={() => setContactsFor(null)} />}<ListTable title={`${config.title} list`} loading={loading} empty={!items.length} headers={[...masterHeaders(kind), "Actions"]}>{items.map(item => <tr key={item.id}>{masterCells(kind, item)}<td className="actions">{kind !== "warehouses" && <button className="secondary" onClick={() => setContactsFor(item)}>Contacts</button>}<button className="secondary" onClick={() => { setEditingId(item.id); setForm(Object.fromEntries(config.fields.map(f => [f.key, (item as unknown as Record<string, string | number | null>)[f.key] ?? ""]))); }}>Edit</button><button className="danger" onClick={() => void remove(item)}>Delete</button></td></tr>)}</ListTable></>;
 }
 function masterHeaders(kind: MasterKind) { return kind === "suppliers" ? ["Name", "City", "State"] : kind === "warehouses" ? ["Address", "City", "Capacity", "Manager"] : kind === "customers" ? ["Name", "City", "State"] : ["Name", "Date of birth"]; }
 function masterCells(kind: MasterKind, item: MasterItem) {
@@ -93,6 +96,35 @@ function masterCells(kind: MasterKind, item: MasterItem) {
   if (kind === "warehouses") { const x = item as Warehouse; return <><td>{x.street}</td><td>{x.city}</td><td>{x.capacity}</td><td>{x.managerId ?? "—"}</td></>; }
   if (kind === "customers") { const x = item as Customer; return <><td>{x.firstName} {x.lastName}</td><td>{x.city}</td><td>{x.state}</td></>; }
   const x = item as Employee; return <><td>{x.firstName} {x.lastName}</td><td>{x.dob}</td></>;
+}
+
+function ContactsPanel({ kind, owner, onClose }: { kind: MasterKind; owner: MasterItem; onClose: () => void }) {
+  const api = kind === "suppliers" ? supplierContactApi : kind === "customers" ? customerContactApi : employeeContactApi;
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [value, setValue] = useState("");
+  const msg = useMessages();
+  const label = kind === "suppliers" ? (owner as Supplier).name : `${(owner as Customer | Employee).firstName} ${(owner as Customer | Employee).lastName}`;
+  const load = async () => { try { setContacts(await api.list(owner.id)); } catch (e) { msg.setError(errorText(e)); } };
+  useEffect(() => { void load(); }, [owner.id]);
+  async function add(e: FormEvent) {
+    e.preventDefault(); msg.clear();
+    try { await api.add(owner.id, value); setValue(""); msg.setMessage("Contact added."); await load(); } catch (x) { msg.setError(errorText(x)); }
+  }
+  async function remove(c: Contact) {
+    msg.clear();
+    try { await api.remove(owner.id, c.id); msg.setMessage("Contact deleted."); await load(); } catch (x) { msg.setError(errorText(x)); }
+  }
+  return <section className="card">
+    <h2>Contacts for {label}</h2>
+    <Feedback {...msg} />
+    {contacts.length === 0 ? <p>No contacts yet.</p> : <table><thead><tr><th>Contact (email or phone)</th><th>Actions</th></tr></thead><tbody>
+      {contacts.map(c => <tr key={c.id}><td>{c.value}</td><td className="actions"><button className="danger" onClick={() => void remove(c)}>Delete</button></td></tr>)}
+    </tbody></table>}
+    <form onSubmit={add}>
+      <label>New contact (email or phone)<input required maxLength={150} value={value} onChange={e => setValue(e.target.value)} /></label>
+      <div className="actions"><button>Add contact</button><button type="button" className="secondary" onClick={onClose}>Close</button></div>
+    </form>
+  </section>;
 }
 
 type OrderKind = "purchase" | "sales";

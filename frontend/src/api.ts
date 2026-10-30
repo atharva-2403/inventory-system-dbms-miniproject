@@ -5,6 +5,7 @@ export interface Product {
   subtype: "PERISHABLE" | "NON_PERISHABLE"; expiryDate: string | number[] | null;
   storageTemperature: number | null; warrantyPeriodMonths: number | null;
 }
+export interface Contact { id: number; value: string; }
 export interface Supplier { id: number; name: string; street: string; city: string; state: string; pincode: string; }
 export interface Warehouse { id: number; street: string; city: string; state: string; pincode: string; capacity: number; managerId: number | null; }
 export interface Customer { id: number; firstName: string; lastName: string; street: string; city: string; state: string; pincode: string; }
@@ -53,4 +54,12 @@ export const salesOrderApi = {
   create: (value: { customerId: number; orderDate: string; details: { productId: number; quantity: number; unitPrice: number }[] }) => request<SalesOrder>("/api/sales-orders", { method: "POST", body: JSON.stringify(value) }),
   complete: (id: number, recordedByEmployeeId: number | null) => request<SalesOrder>(`/api/sales-orders/${id}/complete`, { method: "POST", body: JSON.stringify({ recordedByEmployeeId }) }),
 };
+const contactResource = (path: string) => ({
+  list: (ownerId: number) => request<Contact[]>(`${path}/${ownerId}/contacts`),
+  add: (ownerId: number, value: string) => request<Contact>(`${path}/${ownerId}/contacts`, { method: "POST", body: JSON.stringify({ value }) }),
+  remove: (ownerId: number, contactId: number) => request<void>(`${path}/${ownerId}/contacts/${contactId}`, { method: "DELETE" }),
+});
+export const supplierContactApi = contactResource("/api/suppliers");
+export const customerContactApi = contactResource("/api/customers");
+export const employeeContactApi = contactResource("/api/employees");
 export const stockTransactionApi = { list: () => request<StockTransaction[]>("/api/stock-transactions") };

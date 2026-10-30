@@ -19,6 +19,22 @@ public final class MasterDataService {
     public Employee create(Employee x)throws SQLException{employeeFields(x);return dao.createEmployee(x);} public Optional<Employee> update(int id,Employee x)throws SQLException{check(id);employeeFields(x);return dao.updateEmployee(id,x);} public boolean deleteEmployee(int id)throws SQLException{check(id);return dao.deleteEmployee(id);}
     public List<Warehouse> warehouses()throws SQLException{return dao.warehouses();} public Optional<Warehouse> warehouse(int id)throws SQLException{check(id);return dao.warehouse(id);}
     public Warehouse create(Warehouse x)throws SQLException{warehouseFields(x);return dao.createWarehouse(x);} public Optional<Warehouse> update(int id,Warehouse x)throws SQLException{check(id);warehouseFields(x);return dao.updateWarehouse(id,x);} public boolean deleteWarehouse(int id)throws SQLException{check(id);return dao.deleteWarehouse(id);}
+    public List<Contact> contacts(String kind, int ownerId) throws SQLException {
+        check(ownerId);
+        return dao.contacts(kind, ownerId);
+    }
+    public Contact addContact(String kind, int ownerId, String value) throws SQLException {
+        check(ownerId);
+        if (value == null || value.isBlank()) throw new ValidationException("Contact value is required.");
+        String v = value.trim();
+        if (v.length() > 150) throw new ValidationException("Contact must be 150 characters or fewer.");
+        return dao.addContact(kind, ownerId, v);
+    }
+    public boolean deleteContact(String kind, int ownerId, int contactId) throws SQLException {
+        check(ownerId);
+        check(contactId);
+        return dao.deleteContact(kind, ownerId, contactId);
+    }
     private void check(int id){if(id<=0)throw new ValidationException("ID must be positive.");}
     private void supplierName(Supplier x){if(x==null||x.name()==null||x.name().isBlank())throw new ValidationException("Supplier name is required.");}
     private void customerNames(Customer x){if(x==null)throw new ValidationException("Customer is required.");names(x.firstName(),x.lastName());}

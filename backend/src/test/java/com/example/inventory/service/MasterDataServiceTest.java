@@ -33,4 +33,28 @@ class MasterDataServiceTest {
         assertThrows(MasterDataService.ValidationException.class, () ->
                 service.addContact("customer", 0, "a@b.com"));
     }
+
+    @Test
+    void rejectsUnknownEmployeeRole() {
+        assertThrows(MasterDataService.ValidationException.class, () ->
+                service.setRole(1, new com.example.inventory.model.EmployeeRole("BOSS", null, null, null, null)));
+    }
+
+    @Test
+    void rejectsManagerWithoutDepartment() {
+        assertThrows(MasterDataService.ValidationException.class, () ->
+                service.setRole(1, new com.example.inventory.model.EmployeeRole("MANAGER", " ", 3, null, null)));
+    }
+
+    @Test
+    void rejectsWarehouseStaffWithoutWarehouse() {
+        assertThrows(MasterDataService.ValidationException.class, () ->
+                service.setRole(1, new com.example.inventory.model.EmployeeRole("WAREHOUSE_STAFF", null, null, null, "09:00-17:00")));
+    }
+
+    @Test
+    void rejectsInvalidSupplierProductLink() {
+        assertThrows(MasterDataService.ValidationException.class, () ->
+                service.linkProduct(1, 0));
+    }
 }

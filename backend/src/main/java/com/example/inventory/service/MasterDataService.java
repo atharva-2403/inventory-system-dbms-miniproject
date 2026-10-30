@@ -35,6 +35,47 @@ public final class MasterDataService {
         check(contactId);
         return dao.deleteContact(kind, ownerId, contactId);
     }
+    public List<Employee> managers() throws SQLException {
+        return dao.managers();
+    }
+    public EmployeeRole role(int employeeId) throws SQLException {
+        check(employeeId);
+        return dao.role(employeeId);
+    }
+    public EmployeeRole setRole(int employeeId, EmployeeRole r) throws SQLException {
+        check(employeeId);
+        if (r == null || r.type() == null) throw new ValidationException("Role type is required.");
+        switch (r.type()) {
+            case "NONE" -> { }
+            case "MANAGER" -> {
+                if (r.department() == null || r.department().isBlank()) throw new ValidationException("Department is required for a manager.");
+                if (r.department().trim().length() > 100) throw new ValidationException("Department must be 100 characters or fewer.");
+                if (r.teamSize() != null && r.teamSize() < 0) throw new ValidationException("Team size must be zero or greater.");
+            }
+            case "WAREHOUSE_STAFF" -> {
+                if (r.warehouseId() == null || r.warehouseId() <= 0) throw new ValidationException("Warehouse is required for warehouse staff.");
+                if (r.shiftTiming() == null || r.shiftTiming().isBlank()) throw new ValidationException("Shift timing is required for warehouse staff.");
+                if (r.shiftTiming().trim().length() > 100) throw new ValidationException("Shift timing must be 100 characters or fewer.");
+            }
+            default -> throw new ValidationException("Role must be NONE, MANAGER or WAREHOUSE_STAFF.");
+        }
+        dao.setRole(employeeId, r);
+        return dao.role(employeeId);
+    }
+    public List<LinkedProduct> supplierProducts(int supplierId) throws SQLException {
+        check(supplierId);
+        return dao.supplierProducts(supplierId);
+    }
+    public LinkedProduct linkProduct(int supplierId, int productId) throws SQLException {
+        check(supplierId);
+        check(productId);
+        return dao.linkProduct(supplierId, productId);
+    }
+    public boolean unlinkProduct(int supplierId, int productId) throws SQLException {
+        check(supplierId);
+        check(productId);
+        return dao.unlinkProduct(supplierId, productId);
+    }
     private void check(int id){if(id<=0)throw new ValidationException("ID must be positive.");}
     private void supplierName(Supplier x){if(x==null||x.name()==null||x.name().isBlank())throw new ValidationException("Supplier name is required.");}
     private void customerNames(Customer x){if(x==null)throw new ValidationException("Customer is required.");names(x.firstName(),x.lastName());}

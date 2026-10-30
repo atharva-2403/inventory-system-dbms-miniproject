@@ -62,4 +62,16 @@ const contactResource = (path: string) => ({
 export const supplierContactApi = contactResource("/api/suppliers");
 export const customerContactApi = contactResource("/api/customers");
 export const employeeContactApi = contactResource("/api/employees");
+export interface LinkedProduct { id: number; name: string; }
+export interface EmployeeRole { type: "NONE" | "MANAGER" | "WAREHOUSE_STAFF"; department: string | null; teamSize: number | null; warehouseId: number | null; shiftTiming: string | null; }
+export const supplierProductApi = {
+  list: (supplierId: number) => request<LinkedProduct[]>(`/api/suppliers/${supplierId}/products`),
+  add: (supplierId: number, productId: number) => request<LinkedProduct>(`/api/suppliers/${supplierId}/products`, { method: "POST", body: JSON.stringify({ productId }) }),
+  remove: (supplierId: number, productId: number) => request<void>(`/api/suppliers/${supplierId}/products/${productId}`, { method: "DELETE" }),
+};
+export const employeeRoleApi = {
+  get: (id: number) => request<EmployeeRole>(`/api/employees/${id}/role`),
+  set: (id: number, role: EmployeeRole) => request<EmployeeRole>(`/api/employees/${id}/role`, { method: "PUT", body: JSON.stringify(role) }),
+  managers: () => request<Employee[]>("/api/employees/managers"),
+};
 export const stockTransactionApi = { list: () => request<StockTransaction[]>("/api/stock-transactions") };

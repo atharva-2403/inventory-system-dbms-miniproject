@@ -96,6 +96,146 @@ public final class MasterDataDao {
         }
     }
 
+    // ---------- supplier <-> product (M:N junction table supplier_products) ----------
+    public List<LinkedProduct> supplierProducts(int supplierId) throws SQLException {
+        String sql = "SELECT p.product_id, p.name FROM supplier_products sp "
+                + "JOIN products p ON p.product_id = sp.product_id WHERE sp.supplier_id = ? ORDER BY p.name";
+        List<LinkedProduct> out = new ArrayList<>();
+        try (var c = database.getConnection(); var s = c.prepareStatement(sql)) {
+            s.setInt(1, supplierId);
+            try (var r = s.executeQuery()) {
+                while (r.next()) out.add(new LinkedProduct(r.getInt(1), r.getString(2)));
+            }
+        }
+        return out;
+    }
+
+    public LinkedProduct linkProduct(int supplierId, int productId) throws SQLException {
+        try (var c = database.getConnection()) {
+            try (var s = c.prepareStatement("INSERT INTO supplier_products (supplier_id, product_id) VALUES (?, ?)")) {
+                s.setInt(1, supplierId);
+                s.setInt(2, productId);
+                s.executeUpdate();
+            }
+            try (var s = c.prepareStatement("SELECT name FROM products WHERE product_id = ?")) {
+                s.setInt(1, productId);
+                try (var r = s.executeQuery()) {
+                    return new LinkedProduct(productId, r.next() ? r.getString(1) : "");
+                }
+            }
+        }
+    }
+
+    public boolean unlinkProduct(int supplierId, int productId) throws SQLException {
+        try (var c = database.getConnection();
+             var s = c.prepareStatement("DELETE FROM supplier_products WHERE supplier_id = ? AND product_id = ?")) {
+            s.setInt(1, supplierId);
+            s.setInt(2, productId);
+            return s.executeUpdate() > 0;
+        }
+    }
+
+    // ---------- employee ISA: managers / warehouse_staff ----------
+    public List<Employee> managers() throws SQLException {
+        String sql = "SELECT e.employee_id, e.first_name, e.last_name, e.dob FROM employees e "
+                + "JOIN managers m ON m.employee_id = e.employee_id ORDER BY e.last_name, e.first_name";
+        List<Employee> out = new ArrayList<>();
+        try (var c = database.getConnection(); var s = c.prepareStatement(sql); var r = s.executeQuery()) {
+            while (r.next()) out.add(new Employee(r.getInt(1), r.getString(2), r.getString(3), r.getDate(4).toLocalDate()));
+        }
+        return out;
+    }
+
+    public EmployeeRole role(int employeeId) throws SQLException {
+        try (var c = database.getConnection()) {
+            try (var s = c.prepareStatement("SELECT department, team_size FROM managers WHERE employee_id = ?")) {
+                s.setInt(1, employeeId);
+                try (var r = s.executeQuery()) {
+                    if (r.next()) return new EmployeeRole("MANAGER", r.getString(1), r.getInt(2), null, null);
+                }
+            }
+            try (var s = c.prepareStatement("SELECT warehouse_id, shift_timing FROM warehouse_staff WHERE employee_id = ?")) {
+                s.setInt(1, employeeId);
+                try (var r = s.executeQuery()) {
+                    if (r.next()) return new EmployeeRole("WAREHOUSE_STAFF", null, null, r.getInt(1), r.getString(2));
+                }
+            }
+            return new EmployeeRole("NONE", null, null, null, null);
+        }
+    }
+
+    // One transaction: the employee ends up in AT MOST ONE subtype table (disjoint + partial ISA).
+    public void setRole(int employeeId, EmployeeRole r) throws SQLException {
+        try (var c = database.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                switch (r.type()) {
+                    case "MANAGER" -> {
+                        exec(c, "DELETE FROM warehouse_staff WHERE employee_id = ?", employeeId);
+                        int teamSize = r.teamSize() == null ? 0 : r.teamSize();
+                        if (exists(c, "SELECT 1 FROM managers WHERE employee_id = ?", employeeId)) {
+                            try (var s = c.prepareStatement("UPDATE managers SET department = ?, team_size = ? WHERE employee_id = ?")) {
+                                s.setString(1, r.department().trim());
+                                s.setInt(2, teamSize);
+                                s.setInt(3, employeeId);
+                                s.executeUpdate();
+                            }
+                        } else {
+                            try (var s = c.prepareStatement("INSERT INTO managers (employee_id, department, team_size) VALUES (?, ?, ?)")) {
+                                s.setInt(1, employeeId);
+                                s.setString(2, r.department().trim());
+                                s.setInt(3, teamSize);
+                                s.executeUpdate();
+                            }
+                        }
+                    }
+                    case "WAREHOUSE_STAFF" -> {
+                        exec(c, "DELETE FROM managers WHERE employee_id = ?", employeeId);
+                        if (exists(c, "SELECT 1 FROM warehouse_staff WHERE employee_id = ?", employeeId)) {
+                            try (var s = c.prepareStatement("UPDATE warehouse_staff SET warehouse_id = ?, shift_timing = ? WHERE employee_id = ?")) {
+                                s.setInt(1, r.warehouseId());
+                                s.setString(2, r.shiftTiming().trim());
+                                s.setInt(3, employeeId);
+                                s.executeUpdate();
+                            }
+                        } else {
+                            try (var s = c.prepareStatement("INSERT INTO warehouse_staff (employee_id, warehouse_id, shift_timing) VALUES (?, ?, ?)")) {
+                                s.setInt(1, employeeId);
+                                s.setInt(2, r.warehouseId());
+                                s.setString(3, r.shiftTiming().trim());
+                                s.executeUpdate();
+                            }
+                        }
+                    }
+                    default -> {
+                        exec(c, "DELETE FROM warehouse_staff WHERE employee_id = ?", employeeId);
+                        exec(c, "DELETE FROM managers WHERE employee_id = ?", employeeId);
+                    }
+                }
+                c.commit();
+            } catch (SQLException | RuntimeException ex) {
+                c.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    private static void exec(java.sql.Connection c, String sql, int id) throws SQLException {
+        try (var s = c.prepareStatement(sql)) {
+            s.setInt(1, id);
+            s.executeUpdate();
+        }
+    }
+
+    private static boolean exists(java.sql.Connection c, String sql, int id) throws SQLException {
+        try (var s = c.prepareStatement(sql)) {
+            s.setInt(1, id);
+            try (var r = s.executeQuery()) {
+                return r.next();
+            }
+        }
+    }
+
     private static void bind(java.sql.PreparedStatement s,String...v)throws SQLException{for(int i=0;i<v.length;i++)if(v[i]==null)s.setNull(i+1,java.sql.Types.VARCHAR);else s.setString(i+1,v[i]);}
     private boolean delete(String table,String key,int id)throws SQLException{try(var c=database.getConnection();var s=c.prepareStatement("DELETE FROM "+table+" WHERE "+key+"=?")){s.setInt(1,id);return s.executeUpdate()>0;}}
 }

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState, type ReactNode } from "react";
+import { employeeRoleApi, supplierProductApi, EmployeeRole, LinkedProduct } from "./api";
 import { Contact, customerContactApi, employeeContactApi, supplierContactApi } from "./api";
 import {
   categoryApi, Category, customerApi, Customer, employeeApi, Employee, productApi, Product,
@@ -75,7 +76,7 @@ type MasterKind = "suppliers" | "warehouses" | "customers" | "employees";
 type MasterItem = Supplier | Warehouse | Customer | Employee;
 const masterConfigs: Record<MasterKind, { title: string; fields: { key: string; label: string; type?: string; required?: boolean }[]; api: { list: () => Promise<MasterItem[]>; create: (x: any) => Promise<MasterItem>; update: (id: number, x: any) => Promise<MasterItem>; remove: (id: number) => Promise<void> } }> = {
   suppliers: { title: "Supplier", fields: [{ key: "name", label: "Name", required: true }, ...addressFields()], api: supplierApi },
-  warehouses: { title: "Warehouse", fields: [...addressFields(), { key: "capacity", label: "Capacity", type: "number", required: true }, { key: "managerId", label: "Manager ID (optional)", type: "number" }], api: warehouseApi },
+  warehouses: { title: "Warehouse", fields: [...addressFields(), { key: "capacity", label: "Capacity", type: "number", required: true }, { key: "managerId", label: "Manager (optional)", type: "manager" }], api: warehouseApi },
   customers: { title: "Customer", fields: [{ key: "firstName", label: "First name", required: true }, { key: "lastName", label: "Last name", required: true }, ...addressFields()], api: customerApi },
   employees: { title: "Employee", fields: [{ key: "firstName", label: "First name", required: true }, { key: "lastName", label: "Last name", required: true }, { key: "dob", label: "Date of birth", type: "date", required: true }], api: employeeApi },
 };
@@ -83,12 +84,16 @@ function addressFields() { return [{ key: "street", label: "Street" }, { key: "c
 function MasterPage({ kind }: { kind: MasterKind }) {
   const [contactsFor, setContactsFor] = useState<MasterItem | null>(null);
   useEffect(() => { setContactsFor(null); }, [kind]);
+  const [panel, setPanel] = useState<{ type: "products" | "role"; item: MasterItem } | null>(null);
+  const [managers, setManagers] = useState<Employee[]>([]);
+  useEffect(() => { setPanel(null); }, [kind]);
+  useEffect(() => { if (kind === "warehouses") employeeRoleApi.managers().then(setManagers).catch(() => setManagers([])); }, [kind]);
   const config = masterConfigs[kind]; const [items, setItems] = useState<MasterItem[]>([]); const [form, setForm] = useState<Record<string, string | number>>({}); const [editingId, setEditingId] = useState<number | null>(null); const [loading, setLoading] = useState(true); const msg = useMessages();
   const load = async () => { setLoading(true); try { setItems(await config.api.list()); } catch (e) { msg.setError(errorText(e)); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, [kind]);
   async function submit(e: FormEvent) { e.preventDefault(); msg.clear(); try { const payload = Object.fromEntries(config.fields.map(f => [f.key, form[f.key] === "" ? null : form[f.key]])); if (editingId === null) await config.api.create(payload); else await config.api.update(editingId, payload); setForm({}); setEditingId(null); msg.setMessage(`${config.title} ${editingId === null ? "created" : "updated"}.`); await load(); } catch (x) { msg.setError(errorText(x)); } }
   async function remove(item: MasterItem) { if (!window.confirm(`Delete this ${config.title.toLowerCase()}?`)) return; try { await config.api.remove(item.id); msg.setMessage(`${config.title} deleted.`); await load(); } catch (x) { msg.setError(errorText(x)); } }
-  return <><section className="card"><h2>{editingId === null ? "Add" : "Edit"} {config.title.toLowerCase()}</h2><form onSubmit={submit}>{config.fields.map(f => <label key={f.key}>{f.label}<input type={f.type || "text"} required={f.required} value={form[f.key] ?? ""} onChange={e => setForm({ ...form, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })} /></label>)}<div className="actions"><button>{editingId === null ? "Add" : "Save"} {config.title.toLowerCase()}</button>{editingId !== null && <button type="button" className="secondary" onClick={() => { setEditingId(null); setForm({}); }}>Cancel</button>}</div></form></section><Feedback {...msg} />{contactsFor && kind !== "warehouses" && <ContactsPanel key={`${kind}-${contactsFor.id}`} kind={kind} owner={contactsFor} onClose={() => setContactsFor(null)} />}<ListTable title={`${config.title} list`} loading={loading} empty={!items.length} headers={[...masterHeaders(kind), "Actions"]}>{items.map(item => <tr key={item.id}>{masterCells(kind, item)}<td className="actions">{kind !== "warehouses" && <button className="secondary" onClick={() => setContactsFor(item)}>Contacts</button>}<button className="secondary" onClick={() => { setEditingId(item.id); setForm(Object.fromEntries(config.fields.map(f => [f.key, (item as unknown as Record<string, string | number | null>)[f.key] ?? ""]))); }}>Edit</button><button className="danger" onClick={() => void remove(item)}>Delete</button></td></tr>)}</ListTable></>;
+  return <><section className="card"><h2>{editingId === null ? "Add" : "Edit"} {config.title.toLowerCase()}</h2><form onSubmit={submit}>{config.fields.map(f => <label key={f.key}>{f.label}{f.type === "manager" ? <select value={form[f.key] ?? ""} onChange={e => setForm({ ...form, [f.key]: e.target.value === "" ? "" : Number(e.target.value) })}><option value="">No manager</option>{managers.map(m => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} (ID {m.id})</option>)}</select> : <input type={f.type || "text"} required={f.required} value={form[f.key] ?? ""} onChange={e => setForm({ ...form, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })} />}</label>)}<div className="actions"><button>{editingId === null ? "Add" : "Save"} {config.title.toLowerCase()}</button>{editingId !== null && <button type="button" className="secondary" onClick={() => { setEditingId(null); setForm({}); }}>Cancel</button>}</div></form></section><Feedback {...msg} />{contactsFor && kind !== "warehouses" && <ContactsPanel key={`${kind}-${contactsFor.id}`} kind={kind} owner={contactsFor} onClose={() => setContactsFor(null)} />}{panel && panel.type === "products" && kind === "suppliers" && <SupplierProductsPanel key={`p-${panel.item.id}`} supplier={panel.item as Supplier} onClose={() => setPanel(null)} />}{panel && panel.type === "role" && kind === "employees" && <EmployeeRolePanel key={`r-${panel.item.id}`} employee={panel.item as Employee} onClose={() => setPanel(null)} />}<ListTable title={`${config.title} list`} loading={loading} empty={!items.length} headers={[...masterHeaders(kind), "Actions"]}>{items.map(item => <tr key={item.id}>{masterCells(kind, item)}<td className="actions">{kind !== "warehouses" && <button className="secondary" onClick={() => setContactsFor(item)}>Contacts</button>}{kind === "suppliers" && <button className="secondary" onClick={() => setPanel({ type: "products", item })}>Products</button>}{kind === "employees" && <button className="secondary" onClick={() => setPanel({ type: "role", item })}>Role</button>}<button className="secondary" onClick={() => { setEditingId(item.id); setForm(Object.fromEntries(config.fields.map(f => [f.key, (item as unknown as Record<string, string | number | null>)[f.key] ?? ""]))); }}>Edit</button><button className="danger" onClick={() => void remove(item)}>Delete</button></td></tr>)}</ListTable></>;
 }
 function masterHeaders(kind: MasterKind) { return kind === "suppliers" ? ["Name", "City", "State"] : kind === "warehouses" ? ["Address", "City", "Capacity", "Manager"] : kind === "customers" ? ["Name", "City", "State"] : ["Name", "Date of birth"]; }
 function masterCells(kind: MasterKind, item: MasterItem) {
@@ -123,6 +128,81 @@ function ContactsPanel({ kind, owner, onClose }: { kind: MasterKind; owner: Mast
     <form onSubmit={add}>
       <label>New contact (email or phone)<input required maxLength={150} value={value} onChange={e => setValue(e.target.value)} /></label>
       <div className="actions"><button>Add contact</button><button type="button" className="secondary" onClick={onClose}>Close</button></div>
+    </form>
+  </section>;
+}
+
+function SupplierProductsPanel({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) {
+  const [linked, setLinked] = useState<LinkedProduct[]>([]);
+  const [all, setAll] = useState<Product[]>([]);
+  const [selected, setSelected] = useState(0);
+  const msg = useMessages();
+  const load = async () => {
+    try {
+      const [l, p] = await Promise.all([supplierProductApi.list(supplier.id), productApi.list()]);
+      setLinked(l); setAll(p);
+      setSelected(p.find(x => !l.some(y => y.id === x.id))?.id ?? 0);
+    } catch (e) { msg.setError(errorText(e)); }
+  };
+  useEffect(() => { void load(); }, [supplier.id]);
+  const available = all.filter(p => !linked.some(l => l.id === p.id));
+  async function add(e: FormEvent) {
+    e.preventDefault(); msg.clear();
+    try { await supplierProductApi.add(supplier.id, selected); msg.setMessage("Product linked."); await load(); } catch (x) { msg.setError(errorText(x)); }
+  }
+  async function remove(p: LinkedProduct) {
+    msg.clear();
+    try { await supplierProductApi.remove(supplier.id, p.id); msg.setMessage("Product unlinked."); await load(); } catch (x) { msg.setError(errorText(x)); }
+  }
+  return <section className="card">
+    <h2>Products supplied by {supplier.name}</h2>
+    <Feedback {...msg} />
+    {linked.length === 0 ? <p>No products linked yet.</p> : <table><thead><tr><th>Product</th><th>Actions</th></tr></thead><tbody>
+      {linked.map(p => <tr key={p.id}><td>{p.name}</td><td className="actions"><button className="danger" onClick={() => void remove(p)}>Unlink</button></td></tr>)}
+    </tbody></table>}
+    {available.length === 0 ? <p>Every product is already linked to this supplier.</p> : <form onSubmit={add}>
+      <label>Link another product<select value={selected} onChange={e => setSelected(Number(e.target.value))}>{available.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <div className="actions"><button>Link product</button><button type="button" className="secondary" onClick={onClose}>Close</button></div>
+    </form>}
+    {available.length === 0 && <div className="actions"><button type="button" className="secondary" onClick={onClose}>Close</button></div>}
+  </section>;
+}
+
+function EmployeeRolePanel({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+  const [role, setRole] = useState<EmployeeRole>({ type: "NONE", department: "", teamSize: 0, warehouseId: null, shiftTiming: "" });
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const msg = useMessages();
+  const load = async () => {
+    try {
+      const [r, w] = await Promise.all([employeeRoleApi.get(employee.id), warehouseApi.list()]);
+      setWarehouses(w);
+      setRole({ type: r.type, department: r.department ?? "", teamSize: r.teamSize ?? 0, warehouseId: r.warehouseId ?? w[0]?.id ?? null, shiftTiming: r.shiftTiming ?? "" });
+    } catch (e) { msg.setError(errorText(e)); }
+  };
+  useEffect(() => { void load(); }, [employee.id]);
+  async function save(e: FormEvent) {
+    e.preventDefault(); msg.clear();
+    try { await employeeRoleApi.set(employee.id, role); msg.setMessage("Role saved."); await load(); } catch (x) { msg.setError(errorText(x)); }
+  }
+  return <section className="card">
+    <h2>Role of {employee.firstName} {employee.lastName}</h2>
+    <p><small>An employee can be a manager, or warehouse staff, or neither - never both.</small></p>
+    <Feedback {...msg} />
+    <form onSubmit={save}>
+      <label>Role<select value={role.type} onChange={e => setRole({ ...role, type: e.target.value as EmployeeRole["type"] })}>
+        <option value="NONE">None</option><option value="MANAGER">Manager</option><option value="WAREHOUSE_STAFF">Warehouse staff</option>
+      </select></label>
+      {role.type === "MANAGER" && <div className="form-grid">
+        <label>Department<input required maxLength={100} value={role.department ?? ""} onChange={e => setRole({ ...role, department: e.target.value })} /></label>
+        <label>Team size<input type="number" min="0" value={role.teamSize ?? 0} onChange={e => setRole({ ...role, teamSize: Number(e.target.value) })} /></label>
+      </div>}
+      {role.type === "WAREHOUSE_STAFF" && <div className="form-grid">
+        <label>Warehouse<select required value={role.warehouseId ?? ""} onChange={e => setRole({ ...role, warehouseId: Number(e.target.value) })}>
+          {warehouses.map(w => <option key={w.id} value={w.id}>{`Warehouse ${w.id} - ${w.street ?? ""} ${w.city ?? ""}`}</option>)}
+        </select></label>
+        <label>Shift timing<input required maxLength={100} placeholder="09:00-17:00" value={role.shiftTiming ?? ""} onChange={e => setRole({ ...role, shiftTiming: e.target.value })} /></label>
+      </div>}
+      <div className="actions"><button>Save role</button><button type="button" className="secondary" onClick={onClose}>Close</button></div>
     </form>
   </section>;
 }

@@ -21,4 +21,13 @@ public final class OrderWorkflowValidator {
             throw new IllegalStateException("Sales order cannot be completed in its current status.");
         }
     }
+
+    public static void validateCancelStatus(String status, String kind) {
+        if ("CANCELLED".equals(status)) {
+            throw new IllegalStateException(kind + " order has already been cancelled.");
+        }
+        if (!"PENDING".equals(status) && !"DRAFT".equals(status)) {
+            throw new IllegalStateException("Only pending or draft " + kind.toLowerCase() + " orders can be cancelled. Fulfilled orders require a separate reversal workflow.");
+        }
+    }
 }

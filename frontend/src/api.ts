@@ -48,11 +48,13 @@ export const purchaseOrderApi = {
   list: () => request<PurchaseOrder[]>("/api/purchase-orders"),
   create: (value: { supplierId: number; orderDate: string; approvedByManagerId: number | null; details: { productId: number; quantity: number; unitPrice: number }[] }) => request<PurchaseOrder>("/api/purchase-orders", { method: "POST", body: JSON.stringify(value) }),
   receive: (id: number, recordedByEmployeeId: number | null) => request<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, { method: "POST", body: JSON.stringify({ recordedByEmployeeId }) }),
+  cancel: (id: number) => request<PurchaseOrder>(`/api/purchase-orders/${id}/cancel`, { method: "POST", body: JSON.stringify({}) }),
 };
 export const salesOrderApi = {
   list: () => request<SalesOrder[]>("/api/sales-orders"),
   create: (value: { customerId: number; orderDate: string; details: { productId: number; quantity: number; unitPrice: number }[] }) => request<SalesOrder>("/api/sales-orders", { method: "POST", body: JSON.stringify(value) }),
   complete: (id: number, recordedByEmployeeId: number | null) => request<SalesOrder>(`/api/sales-orders/${id}/complete`, { method: "POST", body: JSON.stringify({ recordedByEmployeeId }) }),
+  cancel: (id: number) => request<SalesOrder>(`/api/sales-orders/${id}/cancel`, { method: "POST", body: JSON.stringify({}) }),
 };
 const contactResource = (path: string) => ({
   list: (ownerId: number) => request<Contact[]>(`${path}/${ownerId}/contacts`),
